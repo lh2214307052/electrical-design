@@ -723,10 +723,10 @@ export default function App() {
                   {Object.entries(groupedLibrary).map(([type, items]) => (
                     <div key={type} className="bg-white rounded-lg">
                       <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-1 border-b pb-1 border-slate-100">
-                        {type} ({items.length})
+                        {type} ({(items as LibraryItem[]).length})
                       </h4>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {items.map((libItem) => (
+                        {(items as LibraryItem[]).map((libItem) => (
                           <div key={libItem.libId} className="bg-white p-3 rounded border hover:border-blue-400 hover:shadow-md transition-all group relative">
                              {/* 导入区 - 点击卡片主体 */}
                              <div className="cursor-pointer h-full" onClick={() => importFromLibrary(libItem)}>
