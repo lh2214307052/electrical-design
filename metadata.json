@@ -1,0 +1,5 @@
+{
+  "name": "Copy of ElecMaster - Electrical Sizing Assistant",
+  "description": "A tool for electrical engineers to calculate equipment power, select cables, recommended breakers, and generate nameplate data based on load lists.",
+  "requestFramePermissions": []
+}
