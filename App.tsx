@@ -1,5 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, Calculator, Settings, FileText, Zap, ChevronRight, ChevronDown, Info, Book, Save, X, Download } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  Plus, Trash2, Calculator, Settings, FileText, Zap, ChevronRight, ChevronDown, 
+  Info, Book, Save, X, Download, FileSpreadsheet, FolderUp, FolderDown 
+} from 'lucide-react';
 import { LoadItem, LoadType, ProjectConfig, CalculationResult, InputMode, LibraryItem } from './types';
 import { EXAMPLE_LOADS, DEFAULT_LIBRARY } from './data/tables';
 import { performSystemCalculation, getRowRecommendation, calculateRowActivePower, getItemEquivalentKw, getEffectiveVoltage } from './services/calculator';
@@ -26,6 +29,9 @@ export default function App() {
 
   const [result, setResult] = useState<CalculationResult | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  
+  // 文件上传 input 引用
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- 负载库状态 ---
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
@@ -239,6 +245,89 @@ export default function App() {
     setCustomLibrary(prevLib => prevLib.filter(item => item.libId !== libId));
   };
 
+  // --- 文件管理功能 ---
+
+  // 导出 CSV (Excel)
+  const exportToCSV = () => {
+    if (!result) return;
+
+    // CSV BOM for Excel to read UTF-8 correctly
+    const BOM = '\uFEFF'; 
+    let csvContent = BOM + "名称,类型,电压(V),功率/电流输入,数量,系数Kx,Cosφ,计入功率(kW),选型参考\n";
+
+    loads.forEach(item => {
+      const effectiveVoltage = getEffectiveVoltage(item, config.systemVoltage);
+      const activeKw = calculateRowActivePower(item, config.systemVoltage);
+      const inputVal = item.inputMode === InputMode.KW ? `${item.powerKw} kW` : `${item.ratedAmps} A`;
+      const rec = getRowRecommendation(item, config.systemVoltage).replace(/,/g, ' '); // 移除逗号防止CSV错位
+
+      csvContent += `${item.name},${item.type},${effectiveVoltage},${inputVal},${item.quantity},${item.kx},${item.cosPhi},${activeKw.toFixed(2)},${rec}\n`;
+    });
+
+    csvContent += `\n,,,,,,\n`;
+    csvContent += `汇总,,,,,,\n`;
+    csvContent += `总有功功率 (kW),${result.totalActivePower},,,,,,\n`;
+    csvContent += `进线电流 (A),${result.mainCurrent},,,,,,\n`;
+    csvContent += `推荐主空开,${result.mainBreaker},,,,,,\n`;
+    csvContent += `推荐主电缆,${result.mainCable},,,,,,\n`;
+    csvContent += `DC24V总需求,${result.dc24v.recommendedCurrent} A (${result.dc24v.description}),,,,,\n`;
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `配电计算书_${new Date().toLocaleDateString()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // 保存项目 (JSON)
+  const saveProject = () => {
+    const projectData = {
+      version: "1.0",
+      timestamp: new Date().toISOString(),
+      config,
+      loads
+    };
+    const blob = new Blob([JSON.stringify(projectData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `Project_${new Date().toLocaleDateString()}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // 打开项目 (JSON)
+  const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const data = JSON.parse(content);
+        
+        if (data.config && data.loads) {
+          if (window.confirm("确定要导入该项目吗？当前未保存的修改将丢失。")) {
+            setConfig(data.config);
+            setLoads(data.loads);
+          }
+        } else {
+          alert("无效的项目文件格式");
+        }
+      } catch (err) {
+        alert("文件解析失败");
+      }
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsText(file);
+  };
+
   // 生成铭牌文本
   const nameplateText = useMemo(() => {
     if (!result) return '';
@@ -323,14 +412,48 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-100 p-4 md:p-8 font-sans text-slate-800">
       
-      {/* 顶部标题 */}
-      <header className="mb-8 flex items-center gap-3">
-        <div className="p-3 bg-blue-600 rounded-lg text-white shadow-lg">
-          <Zap size={28} />
+      {/* 顶部标题栏 + 工程管理按钮 */}
+      <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-blue-600 rounded-lg text-white shadow-lg">
+            <Zap size={28} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">配电选型助手 <span className="text-sm font-normal text-slate-500 bg-slate-200 px-2 py-1 rounded ml-2">Pro</span></h1>
+            <p className="text-slate-500 text-sm">电气工程师的轻量级计算工具 - 自动计算功率、电流与电缆</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">配电选型助手 <span className="text-sm font-normal text-slate-500 bg-slate-200 px-2 py-1 rounded ml-2">React版</span></h1>
-          <p className="text-slate-500 text-sm">电气工程师的轻量级计算工具 - 自动计算功率、电流与电缆</p>
+
+        {/* 工程文件操作区 */}
+        <div className="flex gap-2 flex-wrap">
+           <input 
+              type="file" 
+              ref={fileInputRef}
+              onChange={handleFileImport}
+              className="hidden"
+              accept=".json"
+           />
+           <button 
+             onClick={() => fileInputRef.current?.click()}
+             className="flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-50 text-sm font-medium transition-colors shadow-sm"
+             title="打开保存的项目文件"
+           >
+             <FolderUp size={16} /> 打开
+           </button>
+           <button 
+             onClick={saveProject}
+             className="flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-50 text-sm font-medium transition-colors shadow-sm"
+             title="保存当前项目到本地"
+           >
+             <FolderDown size={16} /> 保存
+           </button>
+           <button 
+             onClick={exportToCSV}
+             className="flex items-center gap-1.5 bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 text-sm font-medium transition-colors shadow-sm"
+             title="导出 Excel (CSV) 计算书"
+           >
+             <FileSpreadsheet size={16} /> 导出表格
+           </button>
         </div>
       </header>
 
