@@ -346,7 +346,25 @@ export default function App() {
     const eqKw = getItemEquivalentKw(item, config.systemVoltage);
     const activeKw = calculateRowActivePower(item, config.systemVoltage);
     const is380 = effectiveVoltage >= 300; // 简单判断是否三相
+    const root3 = is380 ? 1.732 : 1;
     
+    // --- 新增：计算额定电流 (用于显示) ---
+    const cos = item.cosPhi || 0.8;
+    let calculatedAmps = 0;
+    let currentFormula = '';
+
+    if (item.inputMode === InputMode.KW) {
+      // I = P * 1000 / (U * root3 * cos)
+      calculatedAmps = (item.powerKw * 1000) / (effectiveVoltage * root3 * cos);
+      currentFormula = is380 
+        ? `${item.powerKw}kW × 1000 / (1.732 × ${effectiveVoltage}V × ${cos}) ≈ ${calculatedAmps.toFixed(2)} A`
+        : `${item.powerKw}kW × 1000 / (${effectiveVoltage}V × ${cos}) ≈ ${calculatedAmps.toFixed(2)} A`;
+    } else {
+      calculatedAmps = item.ratedAmps;
+      currentFormula = `直接录入: ${item.ratedAmps} A`;
+    }
+    // ------------------------------------
+
     // 步骤1：单机功率来源
     let step1 = '';
     let step1Title = '';
@@ -370,18 +388,9 @@ export default function App() {
     const voltageDesc = item.useSystemVoltage ? `系统电压(${effectiveVoltage}V)` : `自定义电压(${effectiveVoltage}V)`;
 
     if (item.type === LoadType.MOTOR) {
-       const root3 = is380 ? 1.732 : 1;
-       const estCurrent = item.inputMode === InputMode.AMP 
-          ? item.ratedAmps 
-          : (eqKw * 1000) / (effectiveVoltage * root3 * 0.8);
-
-       step3 = `电机类负载 [${voltageDesc}]：按 AC-3 负荷特性查表。估算电流约 ${estCurrent.toFixed(1)}A，建议接触器规格应大于此值。`;
+       step3 = `电机类负载 [${voltageDesc}]：按 AC-3 负荷特性查表。估算电流约 ${calculatedAmps.toFixed(1)}A，建议接触器规格应大于此值。`;
     } else if (item.type === LoadType.HEATER) {
-       const root3 = is380 ? 1.732 : 1;
-       const estCurrent = item.inputMode === InputMode.AMP 
-          ? item.ratedAmps 
-          : (eqKw * 1000) / (effectiveVoltage * root3 * 1.0); // 加热器 cos=1
-       step3 = `纯电阻负载 [${voltageDesc}]：AC-1。计算电流 ${estCurrent.toFixed(1)}A。`;
+       step3 = `纯电阻负载 [${voltageDesc}]：AC-1。计算电流 ${calculatedAmps.toFixed(1)}A。`;
     } else {
        step3 = `普通负载 [${voltageDesc}]：根据额定电流选择对应空开。`;
     }
@@ -394,7 +403,14 @@ export default function App() {
           </div>
           <div className="flex gap-2">
             <span className="font-bold text-blue-600 min-w-[80px]">Step 1:</span>
-            <span>{step1Title} → {step1}</span>
+            <div className="flex flex-col gap-1">
+               <span>{step1Title} → {step1}</span>
+               {/* 新增的电流计算行 */}
+               <span className="text-slate-600 bg-blue-50/50 px-2 py-0.5 rounded border border-blue-100 inline-block w-fit">
+                  <span className="font-bold text-blue-600 mr-1">额定电流:</span>
+                  {currentFormula}
+               </span>
+            </div>
           </div>
           <div className="flex gap-2">
             <span className="font-bold text-blue-600 min-w-[80px]">Step 2:</span>
